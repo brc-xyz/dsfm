@@ -209,7 +209,7 @@ def _hid_matching_dict(vid: int, pid: int) -> ctypes.c_void_p:
 _IOSERVICE_CALLBACK = ctypes.CFUNCTYPE(None, ctypes.c_void_p, _c_io_iterator_t)
 
 
-def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed) -> None:
+def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed, on_error=None) -> None:
     """
     Register IOServiceAddMatchingNotification for Sony DualSense PIDs:
       - kIOFirstMatchNotification: call on_activated() when a device is ready.
@@ -218,6 +218,7 @@ def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed) -> None:
 
     on_activated() — called when a matching device appears (watcher thread).
     on_removed()   — called when a matching device leaves IOKit (watcher thread).
+    on_error()     — called when a device is seen but activation fails (watcher thread).
     """
     port = _iokit.IONotificationPortCreate(0)  # 0 = kIOMainPortDefault
     if not port:
@@ -243,6 +244,8 @@ def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed) -> None:
                 _iokit.IOObjectRelease(svc)
                 if ok:
                     on_activated()
+                elif on_error:
+                    on_error()
                 svc = _iokit.IOIteratorNext(iterator)
 
         def _on_removed(_, iterator):

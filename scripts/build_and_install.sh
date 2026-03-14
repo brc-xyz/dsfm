@@ -4,7 +4,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."  # run from project root
 
-APP_DEST="/Applications/DSFM.app"
+APP_NAME="DualSense for Mac"
+APP_DEST="/Applications/${APP_NAME}.app"
 
 echo "==> Installing Python dependencies…"
 pip3 install --quiet hidapi rumps py2app
@@ -12,19 +13,19 @@ pip3 install --quiet hidapi rumps py2app
 echo "==> Cleaning previous build…"
 rm -rf build dist
 
-echo "==> Building DSFM.app…"
+echo "==> Building ${APP_NAME}.app…"
 python3 setup.py py2app 2>&1 | grep -v "^$" | grep -v "^running" || true
 
-if [ ! -d "dist/DSFM.app" ]; then
-    echo "[ERROR] Build failed — dist/DSFM.app not found."
+if [ ! -d "dist/${APP_NAME}.app" ]; then
+    echo "[ERROR] Build failed — dist/${APP_NAME}.app not found."
     exit 1
 fi
 
 echo "==> Installing to /Applications…"
 rm -rf "$APP_DEST"
-cp -r dist/DSFM.app "$APP_DEST"
+cp -r "dist/${APP_NAME}.app" "$APP_DEST"
 
 echo ""
-echo "✓  DSFM installed to /Applications"
+echo "✓  ${APP_NAME} installed to /Applications"
 echo ""
 echo "To uninstall, run:  ./uninstall.sh"

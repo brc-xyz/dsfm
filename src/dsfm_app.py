@@ -28,104 +28,140 @@ import dsfm as core
 _SYM_ACTIVE   = "xmark.triangle.circle.square.fill"
 _SYM_INACTIVE = "xmark.triangle.circle.square"
 
+# Key assigned by rumps to the first separator added to the menu.
+_SEP_KEY = "SeparatorMenuItem_1"
+
 
 def _sf(symbol: str) -> NSImage:
     return NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, None)
 
 
-
 class App(rumps.App):
     def __init__(self):
-        super().__init__("DSFM", quit_button=None)
+        super().__init__("DualSense for Mac", quit_button=None)
         self._icon_nsimage = _sf(_SYM_INACTIVE)
 
         self.target_pids = {core.DS_EDGE_PID, core.DS_STD_PID}
-        self._active_count = 0
-        self._lock = threading.Lock()
+        self._controllers = {}  # key → MenuItem
 
-        self.status_item = rumps.MenuItem("○  Waiting for controller…")
+        self.error_item = rumps.MenuItem("Could not activate — view log", callback=self._open_log)
+        self.error_item._menuitem.setImage_(_sf("exclamationmark.triangle"))
+        self.error_item._menuitem.setHidden_(True)
+
+        self.status_item = rumps.MenuItem("No DualSense connected")
+        self.status_item._menuitem.setImage_(_sf("zzz"))
+
+        quit_item = rumps.MenuItem("Quit", callback=self.quit)
+        quit_item._menuitem.setImage_(_sf("xmark.rectangle"))
 
         self.menu = [
+            self.error_item,
             self.status_item,
-            None,
-            rumps.MenuItem("Activate Now", callback=self.activate_now),
-            None,
-            rumps.MenuItem("Quit", callback=self.quit),
+            None,       # separator — always above Quit; controllers inserted before this
+            quit_item,
         ]
 
-        # IOKit watcher: fires on kIOFirstMatchNotification (device ready) and
-        # kIOTerminatedNotification (device removed). Handles already-connected
-        # devices at launch by draining the initial iterator.
         core.start_iokit_hid_watcher(
             self.target_pids,
             self._on_iokit_activated,
             self._on_device_disappeared,
+            self._on_iokit_error,
         )
 
-    # ── Status ────────────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _set_status(self, text: str, active: bool = False) -> None:
-        def _update():
-            self.status_item.title = ("●  " if active else "○  ") + text
-            img = _sf(_SYM_ACTIVE if active else _SYM_INACTIVE)
-            self._icon_nsimage = img
-            try:
-                self._nsapp.nsstatusitem.setImage_(img)
-            except AttributeError:
-                pass
+    def _run_on_main(self, fn):
         if threading.current_thread() is threading.main_thread():
-            _update()
+            fn()
         else:
             from Foundation import NSOperationQueue
-            NSOperationQueue.mainQueue().addOperationWithBlock_(_update)
+            NSOperationQueue.mainQueue().addOperationWithBlock_(fn)
 
-    # ── IOKit watcher callbacks ────────────────────────────────────────────────
-    # Activation is done inside the watcher (via IOHIDDeviceGetReport on the
-    # service ref) before these are called, so all we do here is update the UI.
+    def _device_key(self, info: dict) -> str:
+        return info.get("serial_number") or info.get("path", "")
 
-    def _on_iokit_activated(self) -> None:
-        with self._lock:
-            self._active_count += 1
-        log.info("Controller activated (total active: %d)", self._active_count)
-        self._set_status("Full input active", active=True)
-        rumps.notification(
-            "DualSense for Mac",
-            "Controller ready",
-            "Full input unlocked — touchpad, gyro, and all buttons available.",
-            sound=False,
-        )
+    def _controller_label(self, info: dict) -> str:
+        name = "DualSense Edge" if info.get("product_id") == core.DS_EDGE_PID else "DualSense"
+        same = sum(1 for item in self._controllers.values() if item.title == name or item.title.startswith(name + " "))
+        return name if same == 0 else f"{name} {same + 1}"
 
-    def _on_device_disappeared(self) -> None:
-        with self._lock:
-            if self._active_count > 0:
-                self._active_count -= 1
-            empty = self._active_count == 0
-        log.info("Controller removed (total active: %d)", self._active_count)
-        if empty:
-            self._set_status("Waiting for controller…")
+    def _open_log(self, _=None):
+        import subprocess
+        subprocess.Popen(["open", _log_path])
 
-    # ── Activate Now ──────────────────────────────────────────────────────────
+    # ── Controller list sync ──────────────────────────────────────────────────
 
-    def activate_now(self, _=None) -> None:
-        threading.Thread(target=self._do_activate, daemon=True).start()
+    def _sync(self, devices: list, notify: bool = False):
+        """Reconcile controller menu items with `devices`. Must run on main thread."""
+        current = {self._device_key(d): d for d in devices}
+        added_labels = []
 
-    def _do_activate(self) -> None:
-        self._set_status("Activating…")
-        devices = core.find_target_devices(self.target_pids)
-        if not devices:
-            self._set_status("No controller found")
-            return
-        for d in devices:
-            if core.activate_enhanced_mode(d):
-                self._set_status("Full input active", active=True)
+        # Remove items for disconnected controllers
+        for key in list(self._controllers):
+            if key not in current:
+                item = self._controllers.pop(key)
+                try:
+                    del self.menu[item.title]
+                except Exception:
+                    pass
+
+        # Add items for newly connected controllers
+        for key, info in current.items():
+            if key not in self._controllers:
+                label = self._controller_label(info)
+                item = rumps.MenuItem(label)
+                item._menuitem.setImage_(_sf("checkmark"))
+                item._menuitem.setEnabled_(False)
+                self.menu.insert_before(_SEP_KEY, item)
+                self._controllers[key] = item
+                added_labels.append(label)
+
+        # Status item: visible only when no controllers are connected
+        self.status_item._menuitem.setHidden_(bool(current))
+
+        # Menu bar icon
+        img = _sf(_SYM_ACTIVE if current else _SYM_INACTIVE)
+        self._icon_nsimage = img
+        try:
+            self._nsapp.nsstatusitem.setImage_(img)
+        except AttributeError:
+            pass
+
+        # Clear error banner whenever at least one controller is active
+        if added_labels:
+            self.error_item._menuitem.setHidden_(True)
+
+        if notify:
+            for label in added_labels:
                 rumps.notification(
                     "DualSense for Mac",
                     "Controller ready",
-                    "Full input unlocked — touchpad, gyro, and all buttons available.",
+                    f"{label} — touchpad, gyro, and all buttons available.",
                     sound=False,
                 )
-            else:
-                self._set_status("Activation failed — is Steam holding the lock?")
+
+    # ── IOKit watcher callbacks ────────────────────────────────────────────────
+
+    def _on_iokit_activated(self) -> None:
+        devices = core.find_target_devices(self.target_pids)
+
+        def _update():
+            self._sync(devices, notify=True)
+
+        self._run_on_main(_update)
+
+    def _on_iokit_error(self) -> None:
+        def _update():
+            self.error_item._menuitem.setHidden_(False)
+        self._run_on_main(_update)
+
+    def _on_device_disappeared(self) -> None:
+        devices = core.find_target_devices(self.target_pids)
+
+        def _update():
+            self._sync(devices)
+
+        self._run_on_main(_update)
 
     def quit(self, _=None) -> None:
         os._exit(0)
