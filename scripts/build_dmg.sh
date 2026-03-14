@@ -17,7 +17,7 @@ DMG_NAME="DSFM-${VERSION}.dmg"
 echo "==> DSFM ${VERSION}"
 
 echo "==> Installing Python dependencies…"
-pip3 install --quiet --break-system-packages hidapi rumps py2app
+pip3 install --quiet --break-system-packages hidapi rumps py2app pyobjc-framework-IOBluetooth
 
 echo "==> Installing create-dmg…"
 if ! command -v create-dmg &>/dev/null; then
