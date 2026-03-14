@@ -29,8 +29,10 @@ jobs:
           VERSION=$(python3 -c "
           import ast, sys
           for node in ast.walk(ast.parse(open('setup.py').read())):
-              if isinstance(node, ast.keyword) and node.arg == 'CFBundleShortVersionString':
-                  print(ast.literal_eval(node.value)); sys.exit()
+              if isinstance(node, ast.Dict):
+                  for key, val in zip(node.keys, node.values):
+                      if isinstance(key, ast.Constant) and key.value == 'CFBundleShortVersionString':
+                          print(ast.literal_eval(val)); sys.exit()
           ")
           SHA256=$(shasum -a 256 "dist/DSFM-${VERSION}.dmg" | awk '{print $1}')
           echo "version=$VERSION"   >> $GITHUB_OUTPUT

@@ -7,15 +7,17 @@ cd "$(dirname "$0")/.."  # run from project root
 VERSION=$(python3 -c "
 import ast, sys
 for node in ast.walk(ast.parse(open('setup.py').read())):
-    if isinstance(node, ast.keyword) and node.arg == 'CFBundleShortVersionString':
-        print(ast.literal_eval(node.value)); sys.exit()
+    if isinstance(node, ast.Dict):
+        for key, val in zip(node.keys, node.values):
+            if isinstance(key, ast.Constant) and key.value == 'CFBundleShortVersionString':
+                print(ast.literal_eval(val)); sys.exit()
 ")
 DMG_NAME="DSFM-${VERSION}.dmg"
 
 echo "==> DSFM ${VERSION}"
 
 echo "==> Installing Python dependencies…"
-pip3 install --quiet hidapi rumps py2app cairosvg
+pip3 install --quiet --break-system-packages hidapi rumps py2app cairosvg
 
 echo "==> Installing create-dmg…"
 if ! command -v create-dmg &>/dev/null; then
