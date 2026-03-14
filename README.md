@@ -30,7 +30,7 @@ controller is power-cycled or Bluetooth drops.
 ## Install
 
 ```bash
-git clone https://github.com/alex-brc/dsfm.git
+git clone https://github.com/brc-xyz/dsfm.git
 cd dsfm
 bash build_and_install.sh
 ```
