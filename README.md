@@ -1,4 +1,4 @@
-# DSFM — DualSense for Mac
+# DualSense for Mac
 
 Unlock the full input surface of your PS5 controller on macOS over Bluetooth.
 
@@ -95,6 +95,10 @@ python3 dsfm.py -v
 ---
 
 ## Version history
+
+**0.3.0** — Multi-controller support. Each connected DualSense or DualSense
+Edge appears as its own menu item, activated automatically and shown with a
+checkmark for visual confirmation. Renamed to DualSense for Mac.
 
 **0.2.0** — IOKit-native connect detection. Controller connections are now
 detected via `IOServiceAddMatchingNotification` and enhanced mode is activated
