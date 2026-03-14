@@ -94,6 +94,21 @@ python3 dsfm.py -v
 
 ---
 
+## Version history
+
+**0.2.0** — IOKit-native connect detection. Controller connections are now
+detected via `IOServiceAddMatchingNotification` and enhanced mode is activated
+directly from the IOKit service ref — no polling, no sleeps. UI updates are
+dispatched to the main thread. New app and menu bar icons. Added WoW touchpad
+workaround to docs.
+
+**0.1.1** — New app and menu bar icons. Removed launch agent (app must be
+started manually or added to Login Items).
+
+**0.1.0** — Initial release.
+
+---
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](LICENSE) — free for personal,
