@@ -115,5 +115,4 @@ started manually or added to Login Items).
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE) — free for personal,
-non-commercial use.
+[MIT](LICENSE)
