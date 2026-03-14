@@ -4,15 +4,15 @@ APP = ["src/dsfm_app.py"]
 
 OPTIONS = {
     "argv_emulation": False,
-    "includes": ["dsfm"],
+    "includes": ["dsfm", "hid"],
     "packages": ["rumps"],
     "iconfile": "assets/icons/AppIcon.jpg",
     "plist": {
         "CFBundleName": "DualSense for Mac",
         "CFBundleDisplayName": "DualSense for Mac",
         "CFBundleIdentifier": "xyz.brc.dsfm",
-        "CFBundleVersion": "0.3.0",
-        "CFBundleShortVersionString": "0.3.0",
+        "CFBundleVersion": "0.3.1",
+        "CFBundleShortVersionString": "0.3.1",
         "LSUIElement": True,
         "NSHighResolutionCapable": True,
         "NSUserNotificationAlertStyle": "banner",

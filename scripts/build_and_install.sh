@@ -8,7 +8,7 @@ APP_NAME="DualSense for Mac"
 APP_DEST="/Applications/${APP_NAME}.app"
 
 echo "==> Installing Python dependencies…"
-pip3 install --quiet hidapi rumps py2app
+pip3 install --quiet hidapi rumps py2app  # hidapi bundled into app by py2app
 
 echo "==> Cleaning previous build…"
 rm -rf build dist
