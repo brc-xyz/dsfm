@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_dmg.sh — build DSFM.app, convert icons, package as DMG
+# build_dmg.sh — build DSFM.app and package as DMG
 set -euo pipefail
 
 cd "$(dirname "$0")/.."  # run from project root
@@ -17,28 +17,12 @@ DMG_NAME="DSFM-${VERSION}.dmg"
 echo "==> DSFM ${VERSION}"
 
 echo "==> Installing Python dependencies…"
-pip3 install --quiet --break-system-packages hidapi rumps py2app cairosvg
+pip3 install --quiet --break-system-packages hidapi rumps py2app
 
 echo "==> Installing create-dmg…"
 if ! command -v create-dmg &>/dev/null; then
     brew install create-dmg
 fi
-
-# ── Icons ─────────────────────────────────────────────────────────────────────
-
-echo "==> Converting SVG icons to PNG…"
-python3 - <<'EOF'
-import cairosvg, os
-icons = [
-    ("assets/icons/icon_menubar_active.svg",   "assets/icons/icon_menubar_active.png",    16),
-    ("assets/icons/icon_menubar_active.svg",   "assets/icons/icon_menubar_active@2x.png", 32),
-    ("assets/icons/icon_menubar_inactive.svg", "assets/icons/icon_menubar_inactive.png",    16),
-    ("assets/icons/icon_menubar_inactive.svg", "assets/icons/icon_menubar_inactive@2x.png", 32),
-]
-for src, dst, size in icons:
-    cairosvg.svg2png(url=src, write_to=dst, output_width=size, output_height=size)
-    print(f"  {dst}  ({size}x{size})")
-EOF
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -69,7 +53,7 @@ rm -f "dist/${DMG_NAME}"
 
 create-dmg \
     --volname "DualSense for Mac" \
-    --volicon "assets/icons/AppIcon.png" \
+    --volicon "assets/icons/AppIcon.jpg" \
     --window-pos 200 120 \
     --window-size 560 340 \
     --icon-size 128 \

@@ -10,6 +10,7 @@ import threading
 import time
 
 import rumps
+from AppKit import NSImage
 
 logging.basicConfig(level=logging.WARNING)
 logging.getLogger("dsfm").setLevel(logging.WARNING)
@@ -17,22 +18,18 @@ logging.getLogger("dsfm").setLevel(logging.WARNING)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsfm as core
 
-
-def _icon(name: str) -> str:
-    """Resolve icon path for both bundled (.app) and dev (source) contexts."""
-    if getattr(sys, "frozen", False):
-        return os.path.join(os.path.dirname(sys.executable), "..", "Resources", name)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "assets", "icons", name)
+_SYM_ACTIVE   = "xmark.triangle.circle.square.fill"
+_SYM_INACTIVE = "xmark.triangle.circle.square"
 
 
-ICON_ACTIVE   = _icon("icon_menubar_active.png")
-ICON_INACTIVE = _icon("icon_menubar_inactive.png")
+def _sf(symbol: str) -> NSImage:
+    return NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, None)
 
 
 class App(rumps.App):
     def __init__(self):
-        super().__init__("DSFM", icon=ICON_INACTIVE, quit_button=None, template=True)
+        super().__init__("DSFM", quit_button=None)
+        self._icon_nsimage = _sf(_SYM_INACTIVE)
 
         self.target_pids = {core.DS_EDGE_PID, core.DS_STD_PID}
         self._activated: set = set()
@@ -58,7 +55,7 @@ class App(rumps.App):
 
     def _set_status(self, text: str, active: bool = False) -> None:
         self.status_item.title = ("●  " if active else "○  ") + text
-        self.icon = ICON_ACTIVE if active else ICON_INACTIVE
+        self._nsapp.nsstatusitem.setImage_(_sf(_SYM_ACTIVE if active else _SYM_INACTIVE))
 
     # ── Activate Now ──────────────────────────────────────────────────────────
 

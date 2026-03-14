@@ -15,10 +15,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system deps
-        run: brew install cairo create-dmg
+        run: brew install create-dmg
 
       - name: Install Python deps
-        run: pip3 install --break-system-packages hidapi rumps py2app cairosvg
+        run: pip3 install --break-system-packages hidapi rumps py2app
 
       - name: Build DMG
         run: bash scripts/build_dmg.sh

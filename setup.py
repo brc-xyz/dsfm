@@ -6,13 +6,7 @@ OPTIONS = {
     "argv_emulation": False,
     "includes": ["dsfm"],
     "packages": ["rumps"],
-    "iconfile": "assets/icons/AppIcon.png",
-    "resources": [
-        "assets/icons/icon_menubar_active.png",
-        "assets/icons/icon_menubar_active@2x.png",
-        "assets/icons/icon_menubar_inactive.png",
-        "assets/icons/icon_menubar_inactive@2x.png",
-    ],
+    "iconfile": "assets/icons/AppIcon.jpg",
     "plist": {
         "CFBundleName": "DSFM",
         "CFBundleDisplayName": "DualSense for Mac",
