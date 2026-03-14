@@ -51,7 +51,7 @@ jobs:
           SHA256: ${{ steps.info.outputs.sha256 }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.TAP_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.TAP_DEPLOY_TOKEN }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           git clone git@github.com:alex-brc/homebrew-dsfm.git /tmp/tap
