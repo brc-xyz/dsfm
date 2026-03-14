@@ -18,9 +18,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsfm as core
 
 
+def _icon(name: str) -> str:
+    """Resolve icon path for both bundled (.app) and dev (source) contexts."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "..", "Resources", name)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "assets", "icons", name)
+
+
+ICON_ACTIVE   = _icon("icon_menubar_active.png")
+ICON_INACTIVE = _icon("icon_menubar_inactive.png")
+
+
 class App(rumps.App):
     def __init__(self):
-        super().__init__("🎮", quit_button=None)
+        super().__init__("DSFM", icon=ICON_INACTIVE, quit_button=None, template=True)
 
         self.target_pids = {core.DS_EDGE_PID, core.DS_STD_PID}
         self._activated: set = set()
@@ -46,6 +58,7 @@ class App(rumps.App):
 
     def _set_status(self, text: str, active: bool = False) -> None:
         self.status_item.title = ("●  " if active else "○  ") + text
+        self.icon = ICON_ACTIVE if active else ICON_INACTIVE
 
     # ── Activate Now ──────────────────────────────────────────────────────────
 
