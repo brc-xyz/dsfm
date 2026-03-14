@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: brew install cairo create-dmg
+
+      - name: Install Python deps
+        run: pip3 install hidapi rumps py2app cairosvg
+
+      - name: Build DMG
+        run: bash scripts/build_dmg.sh
+
+      - name: Collect build info
+        id: info
+        run: |
+          VERSION=$(python3 -c "
+          import ast, sys
+          for node in ast.walk(ast.parse(open('setup.py').read())):
+              if isinstance(node, ast.keyword) and node.arg == 'CFBundleShortVersionString':
+                  print(ast.literal_eval(node.value)); sys.exit()
+          ")
+          SHA256=$(shasum -a 256 "dist/DSFM-${VERSION}.dmg" | awk '{print $1}')
+          echo "version=$VERSION"   >> $GITHUB_OUTPUT
+          echo "sha256=$SHA256"     >> $GITHUB_OUTPUT
+          echo "dmg=dist/DSFM-${VERSION}.dmg" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.info.outputs.dmg }}
+          generate_release_notes: true
+
+      - name: Update Homebrew tap
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+          SHA256: ${{ steps.info.outputs.sha256 }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TAP_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git clone git@github.com:alex-brc/homebrew-dsfm.git /tmp/tap
+          cd /tmp/tap
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/dsfm.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/dsfm.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/dsfm.rb
+          git commit -m "Update dsfm to v${VERSION}"
+          git push
