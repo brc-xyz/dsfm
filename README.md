@@ -8,6 +8,8 @@ back buttons, and FN buttons are invisible** to macOS and any app running on it.
 
 DualSense for Mac fixes this silently and automatically. No Steam required. No remapping.
 
+[My tech blog on this app →](https://brc.xyz/projects/001-dualsense-for-mac/)
+
 ## Supported controllers
 
 | Controller | VID | PID |
