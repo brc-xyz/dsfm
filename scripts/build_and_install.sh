@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."  # run from project root
 APP_DEST="/Applications/DSFM.app"
 
 echo "==> Installing Python dependencies…"
-pip3 install --quiet hidapi rumps py2app pyobjc-framework-IOBluetooth
+pip3 install --quiet hidapi rumps py2app
 
 echo "==> Cleaning previous build…"
 rm -rf build dist

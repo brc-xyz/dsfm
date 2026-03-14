@@ -86,6 +86,11 @@ python3 dsfm.py -v
   it may hold an exclusive lock on the controller. Quit Steam and retry.
 - The mode resets on every power cycle or Bluetooth reconnect — DSFM's auto
   mode handles this transparently.
+- **World of Warcraft — touchpad after reconnect** — WoW initializes
+  DualSense-specific inputs once at first connection. If the controller
+  reconnects mid-session, the touchpad may stop responding. Create a macro
+  with `/console gamepadEnable 0` on the first line and
+  `/console gamepadEnable 1` on the second to reset WoW's controller state.
 
 ---
 

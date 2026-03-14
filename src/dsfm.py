@@ -33,7 +33,9 @@ Requirements:
     macOS — no root required.
 """
 
+import ctypes
 import sys
+import threading
 import time
 import signal
 import argparse
@@ -59,6 +61,179 @@ INPUT_REPORT_ENHANCED_SIZE      = 78
 
 # ── Logging ─────────────────────────────────────────────────────────────────
 log = logging.getLogger("dsfm")
+
+# ── IOKit / CoreFoundation ctypes bindings ───────────────────────────────────
+
+_iokit = ctypes.CDLL("/System/Library/Frameworks/IOKit.framework/IOKit")
+_cf    = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+
+# Primitive types
+_c_io_object_t          = ctypes.c_uint32
+_c_io_service_t         = ctypes.c_uint32
+_c_io_iterator_t        = ctypes.c_uint32
+_c_IOReturn             = ctypes.c_int32
+_c_IONotificationPortRef = ctypes.c_void_p
+_c_CFIndex              = ctypes.c_long
+_kIOReturnSuccess       = 0
+_kIOFirstMatchNotification    = b"IOServiceFirstMatch"
+_kCFStringEncodingUTF8        = ctypes.c_uint32(0x08000100)
+_kCFNumberSInt32Type          = ctypes.c_int(3)
+
+# Function signatures
+_iokit.IONotificationPortCreate.restype  = _c_IONotificationPortRef
+_iokit.IONotificationPortCreate.argtypes = [_c_io_object_t]
+
+_iokit.IONotificationPortGetRunLoopSource.restype  = ctypes.c_void_p
+_iokit.IONotificationPortGetRunLoopSource.argtypes = [_c_IONotificationPortRef]
+
+_iokit.IOServiceMatching.restype  = ctypes.c_void_p
+_iokit.IOServiceMatching.argtypes = [ctypes.c_char_p]
+
+_iokit.IOServiceAddMatchingNotification.restype  = _c_IOReturn
+_iokit.IOServiceAddMatchingNotification.argtypes = [
+    _c_IONotificationPortRef, ctypes.c_char_p, ctypes.c_void_p,
+    ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(_c_io_iterator_t),
+]
+
+_iokit.IOIteratorNext.restype  = _c_io_service_t
+_iokit.IOIteratorNext.argtypes = [_c_io_iterator_t]
+
+_iokit.IOObjectRelease.restype  = _c_IOReturn
+_iokit.IOObjectRelease.argtypes = [_c_io_object_t]
+
+_cf.CFRunLoopGetCurrent.restype  = ctypes.c_void_p
+_cf.CFRunLoopGetCurrent.argtypes = []
+
+_cf.CFRunLoopAddSource.restype  = None
+_cf.CFRunLoopAddSource.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+_cf.CFRunLoopRun.restype  = None
+_cf.CFRunLoopRun.argtypes = []
+
+_cf.CFStringCreateWithCString.restype  = ctypes.c_void_p
+_cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+
+_cf.CFNumberCreate.restype  = ctypes.c_void_p
+_cf.CFNumberCreate.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+
+_cf.CFDictionarySetValue.restype  = None
+_cf.CFDictionarySetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+_cf.CFRelease.restype  = None
+_cf.CFRelease.argtypes = [ctypes.c_void_p]
+
+_IOKIT_REFS = []  # keep ctypes objects alive for the process lifetime
+
+
+def _cf_str(s: str) -> ctypes.c_void_p:
+    return _cf.CFStringCreateWithCString(None, s.encode(), _kCFStringEncodingUTF8)
+
+
+def _cf_int32(v: int) -> ctypes.c_void_p:
+    n = ctypes.c_int32(v)
+    return _cf.CFNumberCreate(None, _kCFNumberSInt32Type, ctypes.byref(n))
+
+
+def _hid_matching_dict(vid: int, pid: int) -> ctypes.c_void_p:
+    d = _iokit.IOServiceMatching(b"IOHIDDevice")
+    k_vid = _cf_str("VendorID");  v_vid = _cf_int32(vid)
+    k_pid = _cf_str("ProductID"); v_pid = _cf_int32(pid)
+    _cf.CFDictionarySetValue(d, k_vid, v_vid)
+    _cf.CFDictionarySetValue(d, k_pid, v_pid)
+    for ref in (k_vid, v_vid, k_pid, v_pid):
+        _cf.CFRelease(ref)
+    return d
+
+
+# ── IOKit HID watcher ─────────────────────────────────────────────────────────
+
+_IOSERVICE_CALLBACK = ctypes.CFUNCTYPE(None, ctypes.c_void_p, _c_io_iterator_t)
+
+
+def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed) -> None:
+    """
+    Register IOServiceAddMatchingNotification for Sony DualSense PIDs:
+      - kIOFirstMatchNotification: call on_activated() when a device is ready.
+      - kIOTerminatedNotification: call on_removed() on disconnect.
+    Runs on a dedicated CFRunLoop thread. No Bluetooth permission required.
+
+    on_activated() — called when a matching device appears (watcher thread).
+    on_removed()   — called when a matching device leaves IOKit (watcher thread).
+    """
+    port = _iokit.IONotificationPortCreate(0)  # 0 = kIOMainPortDefault
+    if not port:
+        log.error("iokit watcher: IONotificationPortCreate failed")
+        return
+
+    source = _iokit.IONotificationPortGetRunLoopSource(port)
+    _IOKIT_REFS.extend([port, source])
+
+    rl_mode = _cf_str("kCFRunLoopDefaultMode")
+    _IOKIT_REFS.append(rl_mode)
+
+    def _thread():
+        run_loop = _cf.CFRunLoopGetCurrent()
+        _cf.CFRunLoopAddSource(run_loop, source, rl_mode)
+
+        iterators = []
+
+        def _on_matched(_, iterator):
+            svc = _iokit.IOIteratorNext(iterator)
+            while svc:
+                log.info("iokit watcher: device matched")
+                _iokit.IOObjectRelease(svc)
+                on_activated()
+                svc = _iokit.IOIteratorNext(iterator)
+
+        def _on_removed(_, iterator):
+            svc = _iokit.IOIteratorNext(iterator)
+            while svc:
+                log.info("iokit watcher: device removed")
+                _iokit.IOObjectRelease(svc)
+                on_removed()
+                svc = _iokit.IOIteratorNext(iterator)
+
+        cb         = _IOSERVICE_CALLBACK(_on_matched)
+        cb_removed = _IOSERVICE_CALLBACK(_on_removed)
+        _IOKIT_REFS.extend([cb, cb_removed])
+
+        for pid in target_pids:
+            matching = _hid_matching_dict(SONY_VID, pid)
+            it = _c_io_iterator_t(0)
+            ret = _iokit.IOServiceAddMatchingNotification(
+                port, _kIOFirstMatchNotification, matching,
+                cb, None, ctypes.byref(it),
+            )
+            if ret != _kIOReturnSuccess:
+                log.error("iokit watcher: AddMatchingNotification failed → 0x%08x", ret & 0xFFFFFFFF)
+                continue
+            iterators.append(it)
+            _IOKIT_REFS.append(it)
+            _on_matched(None, it)  # drain existing devices (arms the notification)
+
+        # Also watch for device removal to trigger UI updates.
+        _kIOTerminatedNotification = b"IOServiceTerminate"
+        for pid in target_pids:
+            matching = _hid_matching_dict(SONY_VID, pid)
+            it = _c_io_iterator_t(0)
+            ret = _iokit.IOServiceAddMatchingNotification(
+                port, _kIOTerminatedNotification, matching,
+                cb_removed, None, ctypes.byref(it),
+            )
+            if ret != _kIOReturnSuccess:
+                log.error("iokit watcher: AddMatchingNotification(removed) failed → 0x%08x", ret & 0xFFFFFFFF)
+                continue
+            iterators.append(it)
+            _IOKIT_REFS.append(it)
+            # Drain to arm (no existing terminated devices, but required)
+            while _iokit.IOIteratorNext(it):
+                pass
+
+        log.debug("iokit watcher: CFRunLoop running (watching %s PIDs)", len(iterators))
+        _cf.CFRunLoopRun()
+
+    t = threading.Thread(target=_thread, daemon=True, name="iokit-watcher")
+    t.start()
 
 
 def setup_logging(verbose: bool) -> None:

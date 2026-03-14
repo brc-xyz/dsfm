@@ -7,13 +7,9 @@ import logging
 import os
 import sys
 import threading
-import time
 
-import objc
 import rumps
 from AppKit import NSImage
-from Foundation import NSObject
-from IOBluetooth import IOBluetoothDevice
 
 _log_path = os.path.expanduser("~/Library/Logs/dsfm.log")
 logging.basicConfig(
@@ -36,40 +32,6 @@ _SYM_INACTIVE = "xmark.triangle.circle.square"
 def _sf(symbol: str) -> NSImage:
     return NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, None)
 
-
-class _BTWatcher(NSObject):
-    """Fires immediately when a DualSense connects or disconnects over Bluetooth."""
-
-    def initWithApp_(self, app):
-        self = objc.super(_BTWatcher, self).init()
-        if self is None:
-            return None
-        self._app = app
-        self._disconnect_notifs = {}   # addr → IOBluetoothUserNotification (must stay alive)
-        self._connect_notif = IOBluetoothDevice.registerForConnectNotifications_selector_(
-            self, "deviceConnected:device:"
-        )
-        log.debug("BTWatcher: listening for BT connections")
-        return self
-
-    def deviceConnected_device_(self, notification, device):
-        if device.vendorID() != core.SONY_VID:
-            return
-        addr = device.addressString()
-        log.info("BT connected: %s (vid=0x%04x pid=0x%04x)", addr,
-                 device.vendorID(), device.productID())
-        n = device.registerForDisconnectNotification_selector_(
-            self, "deviceDisconnected:device:"
-        )
-        self._disconnect_notifs[addr] = n
-        if self._app._auto:
-            threading.Thread(target=self._app._on_device_appeared, daemon=True).start()
-
-    def deviceDisconnected_device_(self, notification, device):
-        addr = device.addressString()
-        log.info("BT disconnected: %s", addr)
-        self._disconnect_notifs.pop(addr, None)
-        self._app._on_device_disappeared()
 
 
 class App(rumps.App):
@@ -95,9 +57,14 @@ class App(rumps.App):
             rumps.MenuItem("Quit", callback=self.quit),
         ]
 
-        # Scan once for already-connected controllers, then hand off to BTWatcher
-        threading.Thread(target=self._on_device_appeared, daemon=True).start()
-        self._bt_watcher = _BTWatcher.alloc().initWithApp_(self)
+        # IOKit watcher: fires on kIOFirstMatchNotification (device ready) and
+        # kIOTerminatedNotification (device removed). Handles already-connected
+        # devices at launch by draining the initial iterator.
+        core.start_iokit_hid_watcher(
+            self.target_pids,
+            self._on_iokit_activated,
+            self._on_device_disappeared,
+        )
 
     # ── Status ────────────────────────────────────────────────────────────────
 
@@ -110,34 +77,29 @@ class App(rumps.App):
         except AttributeError:
             pass
 
-    # ── BT event handlers ─────────────────────────────────────────────────────
+    # ── IOKit watcher callback ─────────────────────────────────────────────────
 
-    def _on_device_appeared(self) -> None:
-        time.sleep(0.3)  # let HID enumerate after BT connect
+    def _on_iokit_activated(self) -> None:
         devices = core.find_target_devices(self.target_pids)
         for d in devices:
             key = d.get("serial_number") or d.get("path", "")
             with self._lock:
                 already = key in self._activated
-            if not already:
-                log.info("Activating: %s", core.device_label(d))
-                for attempt in range(1, 6):
-                    if core.activate_enhanced_mode(d):
-                        with self._lock:
-                            self._activated.add(key)
-                        log.info("Enhanced mode active: %s", core.device_label(d))
-                        self._set_status("Full input active", active=True)
-                        rumps.notification(
-                            "DualSense for Mac",
-                            "Controller ready",
-                            "Full input unlocked — touchpad, gyro, and all buttons available.",
-                            sound=False,
-                        )
-                        break
-                    log.warning("Attempt %d failed for %s, retrying…", attempt, core.device_label(d))
-                    time.sleep(0.5)
-                else:
-                    log.warning("Activation failed after 5 attempts: %s", core.device_label(d))
+            if already:
+                continue
+            if core.activate_enhanced_mode(d):
+                with self._lock:
+                    self._activated.add(key)
+                log.info("Enhanced mode active: %s", core.device_label(d))
+                self._set_status("Full input active", active=True)
+                rumps.notification(
+                    "DualSense for Mac",
+                    "Controller ready",
+                    "Full input unlocked — touchpad, gyro, and all buttons available.",
+                    sound=False,
+                )
+
+    # ── BT disconnect handler ─────────────────────────────────────────────────
 
     def _on_device_disappeared(self) -> None:
         current = {d.get("serial_number") or d.get("path", "")
@@ -181,10 +143,7 @@ class App(rumps.App):
     def toggle_auto(self, sender) -> None:
         self._auto = not self._auto
         sender.state = 1 if self._auto else 0
-        if self._auto:
-            threading.Thread(target=self._on_device_appeared, daemon=True).start()
-            self._set_status("Waiting for controller…")
-        else:
+        if not self._auto:
             self._set_status("Auto-activate off")
 
     def quit(self, _=None) -> None:

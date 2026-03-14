@@ -5,7 +5,7 @@ APP = ["src/dsfm_app.py"]
 OPTIONS = {
     "argv_emulation": False,
     "includes": ["dsfm"],
-    "packages": ["rumps", "IOBluetooth"],
+    "packages": ["rumps"],
     "iconfile": "assets/icons/AppIcon.jpg",
     "plist": {
         "CFBundleName": "DSFM",
