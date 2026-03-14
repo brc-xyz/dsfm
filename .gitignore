@@ -1,0 +1,18 @@
+# Internal / non-public
+.claude/
+
+# py2app build output
+build/
+dist/
+*.egg-info/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Steering doc (private)
+CLAUDE.md
