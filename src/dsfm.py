@@ -122,7 +122,66 @@ _cf.CFDictionarySetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_
 _cf.CFRelease.restype  = None
 _cf.CFRelease.argtypes = [ctypes.c_void_p]
 
+_cf.CFAllocatorGetDefault.restype  = ctypes.c_void_p
+_cf.CFAllocatorGetDefault.argtypes = []
+
+_iokit.IOHIDDeviceCreate.restype  = ctypes.c_void_p
+_iokit.IOHIDDeviceCreate.argtypes = [ctypes.c_void_p, _c_io_service_t]
+
+_iokit.IOHIDDeviceOpen.restype  = _c_IOReturn
+_iokit.IOHIDDeviceOpen.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+
+_iokit.IOHIDDeviceClose.restype  = _c_IOReturn
+_iokit.IOHIDDeviceClose.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+
+_iokit.IOHIDDeviceScheduleWithRunLoop.restype  = None
+_iokit.IOHIDDeviceScheduleWithRunLoop.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+_iokit.IOHIDDeviceUnscheduleFromRunLoop.restype  = None
+_iokit.IOHIDDeviceUnscheduleFromRunLoop.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+_iokit.IOHIDDeviceGetReport.restype  = _c_IOReturn
+_iokit.IOHIDDeviceGetReport.argtypes = [
+    ctypes.c_void_p, ctypes.c_int, _c_CFIndex,
+    ctypes.c_void_p, ctypes.POINTER(_c_CFIndex),
+]
+
+_kIOHIDReportTypeFeature = ctypes.c_int(2)
+
 _IOKIT_REFS = []  # keep ctypes objects alive for the process lifetime
+
+
+def _iokit_activate(service: int, run_loop, rl_mode) -> bool:
+    """Open device (non-exclusive), send feature report 0x05, close."""
+    alloc  = _cf.CFAllocatorGetDefault()
+    device = _iokit.IOHIDDeviceCreate(alloc, service)
+    if not device:
+        log.debug("iokit: IOHIDDeviceCreate returned null")
+        return False
+    try:
+        ret = _iokit.IOHIDDeviceOpen(device, ctypes.c_uint32(0))
+        if ret != _kIOReturnSuccess:
+            log.debug("iokit: IOHIDDeviceOpen failed: 0x%08x", ret & 0xFFFFFFFF)
+            return False
+        try:
+            _iokit.IOHIDDeviceScheduleWithRunLoop(device, run_loop, rl_mode)
+            buf    = (ctypes.c_uint8 * FEATURE_REPORT_CALIBRATION_SIZE)()
+            length = _c_CFIndex(FEATURE_REPORT_CALIBRATION_SIZE)
+            ret = _iokit.IOHIDDeviceGetReport(
+                device, _kIOHIDReportTypeFeature,
+                _c_CFIndex(FEATURE_REPORT_CALIBRATION),
+                buf, ctypes.byref(length),
+            )
+            _iokit.IOHIDDeviceUnscheduleFromRunLoop(device, run_loop, rl_mode)
+        finally:
+            _iokit.IOHIDDeviceClose(device, ctypes.c_uint32(0))
+        if ret == _kIOReturnSuccess:
+            log.info("iokit: enhanced mode activated")
+            return True
+        log.debug("iokit: IOHIDDeviceGetReport failed: 0x%08x", ret & 0xFFFFFFFF)
+        return False
+    finally:
+        _cf.CFRelease(device)
 
 
 def _cf_str(s: str) -> ctypes.c_void_p:
@@ -180,9 +239,10 @@ def start_iokit_hid_watcher(target_pids: set, on_activated, on_removed) -> None:
         def _on_matched(_, iterator):
             svc = _iokit.IOIteratorNext(iterator)
             while svc:
-                log.info("iokit watcher: device matched")
+                ok = _iokit_activate(svc, run_loop, rl_mode)
                 _iokit.IOObjectRelease(svc)
-                on_activated()
+                if ok:
+                    on_activated()
                 svc = _iokit.IOIteratorNext(iterator)
 
         def _on_removed(_, iterator):
