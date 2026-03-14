@@ -57,8 +57,8 @@ create-dmg \
     --window-pos 200 120 \
     --window-size 560 340 \
     --icon-size 128 \
-    --icon "DSFM.app" 140 160 \
-    --hide-extension "DSFM.app" \
+    --icon "DualSense for Mac.app" 140 160 \
+    --hide-extension "DualSense for Mac.app" \
     --app-drop-link 420 160 \
     "dist/${DMG_NAME}" \
     "dist/"
