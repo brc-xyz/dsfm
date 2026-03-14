@@ -32,8 +32,8 @@ rm -rf build dist
 echo "==> Building DSFM.app…"
 python3 setup.py py2app 2>&1 | grep -v "^$" | grep -v "^running" || true
 
-if [ ! -d "dist/DSFM.app" ]; then
-    echo "[ERROR] Build failed — dist/DSFM.app not found."
+if [ ! -d "dist/DualSense for Mac.app" ]; then
+    echo "[ERROR] Build failed — dist/DualSense for Mac.app not found."
     exit 1
 fi
 
